@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link href="https://fonts.googleapis.com/css2?family=REM:wght@300;400;500&family=Oswald:wght@200;300;400;500;600;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <title>SafePing</title>
+    <style>
+        /* Estilos gerais */
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 10px;
+            background-color: #1f1f1f;
+        }
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+        }
+        h1 {
+            font-family: Oswald;
+            color: #fff;
+        }
+        .logo {
+            width: 100%;
+            max-width: 250px;
+            margin: 20px auto;
+        }
+        .add-domains label {
+            color: #fff;
+        }
+        .add-domains input {
+            background: #707070;
+            border: none;
+            padding: 5px;
+            margin: 0 10px;
+            border-radius: 5px;
+            color: #b3b3b3;
+            font-size: 15px;
+        }
+        .add-domains button{
+            background-color: #4f9946;
+            border: none;
+            padding: 6px 10px;
+            color: #fff;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .add-domains button:hover{
+            background-color: #147500;
+        }
+        table {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+            border-collapse: collapse;
+        }
+        tbody {
+            border: 1px solid #464646;
+            background-color: #333;
+        }
+        th, td {
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #2b2b2b;
+            color: white;
+        }
+        td {
+            color: #b3b3b3;
+            border-bottom: 1px solid #464646;
+        }
+        .status-online {
+            color: rgb(0, 201, 0);
+            font-weight: bold;
+        }
+        .status-offline {
+            color: red;
+            font-weight: bold;
+        }
+
+        /* Responsividade para mobile */
+        @media (max-width: 768px) {
+            table {
+                width: 100%;
+            }
+            body {
+                font-size: 14px;
+            }
+            .add-domains label, button {
+                display: block;
+                margin: 5px auto;
+            }
+            .add-domains input {
+                width: 80%;
+            }
+            .popup, .confirm-popup {
+                max-width: 80%;
+            }
+        }
+
+        /* Estilos para o popup */
+        .popup, .confirm-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #333;
+            color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            display: none;
+            z-index: 1001;
+            width: 500px;
+        }
+        .popup button, .confirm-popup button {
+            background-color: #4f9946;
+            border: none;
+            padding: 6px 12px;
+            color: #fff;
+            border-radius: 5px;
+            margin: 10px;
+            display: inline-block;
+            cursor: pointer;
+        }
+        .confirm-popup .cancel-btn {
+            background-color: #b33a3a;
+        }
+
+        /* Camada de fundo escurecida */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    
+    <img class="logo" src="img/safeping.png">
+    <!--<h1>SafePing</h1>-->
+    
+    <!-- Formulário para adicionar novo domínio -->
+    <form class="add-domains" id="addDomainForm">
+        <label for="newSite">Novo Site?</label>
+        <input type="text" id="newSite" placeholder="https://exemplo.com" value="https://" required>
+        <button type="submit">Adicionar</button>
+    </form>
+    
+    <div class="table-wrapper" id="dashboard"></div>
+
+    <!-- Camada de fundo escurecida -->
+    <div id="overlay" class="overlay"></div>
+
+    <!-- Popup de confirmação de remoção -->
+    <div id="confirmPopup" class="confirm-popup">
+        <p>Tem certeza de que deseja remover este domínio?</p>
+        <button id="confirmRemoveBtn">Confirmar</button>
+        <button class="cancel-btn" onclick="closeConfirmPopup()">Cancelar</button>
+    </div>
+
+    <script>
+        const baseURL = "http://174.138.89.207:8000";
+        let domainIdToRemove = null;  // Armazena o ID do domínio a ser removido
+
+        function getResponseTimeColor(time) {
+            if (time < 0.5) return 'green';
+            if (time > 1.5) return 'red';
+            const ratio = (time - 0.5) / (1.5 - 0.5);
+            const red = Math.round(255 * ratio);
+            const green = Math.round(255 * (1 - ratio));
+            return `rgb(${red}, ${green}, 0)`;
+        }
+
+        async function updateDashboard() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const key = urlParams.get("key");
+
+            if (!key) {
+                console.error("Token de acesso não fornecido!");
+                return;
+            }
+
+            const url = `${baseURL}/api/status?key=${key}`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error("Acesso negado ou erro na requisição");
+                }
+
+                const data = await response.json();
+                let html = "<table><tr><th>Site</th><th>Status</th><th>Resposta(s)</th><th>Média(s)</th><th>Ações</th></tr>";
+                for (const [site, info] of Object.entries(data)) {
+                    const statusClass = info.status === "Online" ? "status-online" : "status-offline";
+                    const responseColor = info.response_time ? getResponseTimeColor(info.response_time) : 'gray';
+                    const averageColor = info.average_response_time ? getResponseTimeColor(info.average_response_time) : 'gray';
+
+                    html += `<tr data-id="${info.id}">
+                        <td style="text-align:left">${site}</td>
+                        <td class="${statusClass}">${info.status}</td>
+                        <td style="background-color: ${responseColor}; color: white; font-weight: bold;">
+                            ${info.response_time ? info.response_time.toFixed(2) : 'N/A'}
+                        </td>
+                        <td style="background-color: ${averageColor}; color: white; font-weight: bold;">
+                            ${info.average_response_time ? info.average_response_time.toFixed(2) : 'N/A'}
+                        </td>
+                        <td>
+                            <button onclick="showConfirmPopup(${info.id})">X</button>
+                        </td>
+                    </tr>`;
+                }
+                html += "</table>";
+                document.getElementById("dashboard").innerHTML = html;
+            } catch (error) {
+                console.error("Erro:", error);
+            }
+        }
+
+        // Exibe o popup de confirmação de remoção com a camada de fundo
+        function showConfirmPopup(id) {
+            domainIdToRemove = id;
+            document.getElementById("overlay").style.display = "block";
+            document.getElementById("confirmPopup").style.display = "block";
+        }
+
+        // Fecha o popup de confirmação de remoção e a camada de fundo
+        function closeConfirmPopup() {
+            document.getElementById("overlay").style.display = "none";
+            document.getElementById("confirmPopup").style.display = "none";
+        }
+
+        // Evento de confirmação de remoção
+        document.getElementById("confirmRemoveBtn").addEventListener("click", async function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const key = urlParams.get("key");
+
+            try {
+                const response = await fetch(`${baseURL}/api/remove_domain/${domainIdToRemove}?key=${key}`, {
+                    method: "DELETE"
+                });
+                
+                if (response.ok) {
+                    updateDashboard();
+                    closeConfirmPopup();
+                }
+            } catch (error) {
+                console.error("Erro:", error);
+            }
+        });
+
+        document.getElementById("addDomainForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            const newSiteInput = document.getElementById("newSite");
+            let newSite = newSiteInput.value;
+
+            if (!newSite.startsWith("https://")) {
+                newSite = "https://" + newSite;
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const key = urlParams.get("key");
+
+            try {
+                const response = await fetch(`${baseURL}/api/add_domain?key=${key}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ site: newSite })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    newSiteInput.value = "https://";  
+                    updateDashboard();
+                } else {
+                    console.error("Erro: " + result.detail);
+                }
+            } catch (error) {
+                console.error("Erro:", error);
+            }
+        });
+
+        setInterval(updateDashboard, 10000);
+        updateDashboard();
+    </script>
+</body>
+</html>
